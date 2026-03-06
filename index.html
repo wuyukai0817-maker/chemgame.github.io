@@ -1,0 +1,1068 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>原子团符号拼图大战 - 基本布局和拖拽机制</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdn.jsdelivr.net/npm/font-awesome@4.7.0/css/font-awesome.min.css" rel="stylesheet">
+    <!-- Tailwind 配置 -->
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: '#3B82F6',
+                        secondary: '#F97316',
+                        accent: '#FACC15',
+                        neutral: '#64748B',
+                        'element-blue': '#3B82F6',
+                        'number-red': '#EF4444',
+                        'charge-green': '#10B981',
+                    },
+                    fontFamily: {
+                        sans: ['Inter', 'system-ui', 'sans-serif'],
+                    },
+                }
+            }
+        }
+    </script>
+    <style type="text/tailwindcss">
+        @layer utilities {
+            .content-auto {
+                content-visibility: auto;
+            }
+            .grid-dot {
+                background-image: radial-gradient(rgba(100, 116, 139, 0.2) 1px, transparent 1px);
+                background-size: 12px 12px;
+            }
+            .draggable-item {
+                @apply cursor-grab active:cursor-grabbing transition-all duration-200;
+            }
+            .slot-hover {
+                @apply transition-all duration-200 hover:bg-primary/10;
+            }
+            .btn-game {
+                @apply px-4 py-2 rounded-md font-medium transition-all duration-200 transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-offset-2;
+            }
+            .btn-primary {
+                @apply bg-primary text-white focus:ring-primary;
+            }
+            .btn-secondary {
+                @apply bg-secondary text-white focus:ring-secondary;
+            }
+            .btn-accent {
+                @apply bg-accent text-gray-800 focus:ring-accent;
+            }
+            .canvas-grid-dashed {
+                background-image: linear-gradient(to right, #ccc 1px, transparent 1px),
+                                 linear-gradient(to bottom, #ccc 1px, transparent 1px);
+                background-size: 60px 60px;
+            }
+            .valid-drop {
+                @apply bg-green-100;
+            }
+            .selected-item {
+                @apply border-4 border-black;
+            }
+            .music-control {
+                @apply fixed bottom-4 right-4 z-50 bg-white/80 backdrop-blur-sm rounded-full p-3 shadow-lg transition-all duration-300 hover:scale-110;
+            }
+            .modal {
+                display: none;
+                position: fixed;
+                z-index: 100;
+                left: 0;
+                top: 0;
+                width: 100%;
+                height: 100%;
+                overflow: auto;
+                background-color: rgba(0, 0, 0, 0.4);
+            }
+            .modal-content {
+                background-color: #fefefe;
+                margin: 15% auto;
+                padding: 20px;
+                border: 1px solid #888;
+                width: 40%;
+                border-radius: 8px;
+                text-align: center;
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+            }
+            .modal-button {
+                @apply btn-game btn-primary mt-4 mx-auto;
+            }
+        }
+    </style>
+</head>
+<body class="bg-gradient-to-br from-blue-50 to-indigo-100 min-h-screen font-sans text-gray-800">
+    <!-- 音频元素 -->
+    <audio id="bgMusic" loop>
+        <source src="https://assets.codepen.io/21542/howler-demo-bg-music.mp3" type="audio/mpeg">
+    </audio>
+    <audio id="correctSound" src="https://example.com/correct-sound.mp3"></audio>
+    <audio id="wrongSound" src="https://example.com/wrong-sound.mp3"></audio>
+    <audio id="endSound" src="https://example.com/end-sound.mp3"></audio>
+    <!-- 音乐控制按钮 -->
+    <button id="musicBtn" class="music-control">
+        <i class="fa fa-volume-up text-xl text-primary"></i>
+    </button>
+    <!-- 顶部标题 -->
+    <header class="py-4 px-6 bg-white shadow-md sticky top-0 z-50 flex justify-between items-center">
+        <div class="container mx-auto">
+            <h1 class="text-[clamp(1.5rem,3vw,2.5rem)] font-bold text-primary">
+                <i class="fa fa-puzzle-piece mr-2"></i>原子团符号拼图大战
+                <span class="text-sm font-normal text-gray-500 ml-4">浙江师范大学 教育学院 黄梦兰制作</span>
+            </h1>
+        </div>
+        <div id="score-timer" class="text-lg font-semibold text-gray-700 mr-4">
+            得分：0分，用时：0秒
+        </div>
+    </header>
+    <!-- 主游戏区 -->
+    <main class="container mx-auto p-4 md:p-6 lg:p-8">
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <!-- 左侧素材库 -->
+            <div class="lg:col-span-1 space-y-6">
+                <!-- 元素方块素材库 -->
+                <div class="bg-white rounded-xl shadow-lg p-5 border-2 border-element-blue/30">
+                    <h2 class="text-xl font-bold text-element-blue mb-2">元素方块素材库</h2>
+                    <div id="element-library" class="grid grid-cols-5 gap-2 p-3 border border-element-blue rounded-lg min-h-[60px]">
+                        <!-- 元素方块将通过JS动态生成 -->
+                    </div>
+                </div>
+                <!-- 数字方块素材库 -->
+                <div class="bg-white rounded-xl shadow-lg p-5 border-2 border-number-red/30">
+                    <h2 class="text-xl font-bold text-number-red mb-2">数字方块素材库</h2>
+                    <div id="number-library" class="grid grid-cols-5 gap-2 p-3 border border-number-red rounded-lg min-h-[60px]">
+                        <!-- 数字方块将通过JS动态生成 -->
+                    </div>
+                </div>
+                <!-- 电荷方块素材库 -->
+                <div class="bg-white rounded-xl shadow-lg p-5 border-2 border-charge-green/30">
+                    <h2 class="text-xl font-bold text-charge-yellow mb-2">电荷方块素材库</h2>
+                    <div id="charge-library" class="grid grid-cols-6 gap-2 p-3 border border-charge-yellow rounded-lg min-h-[60px]">
+                        <!-- 电荷方块将通过JS动态生成 -->
+                    </div>
+                </div>
+            </div>
+            <!-- 右侧拼接工作台 -->
+            <div class="lg:col-span-2 space-y-6">
+                <!-- 提示区 -->
+                <div class="bg-white rounded-xl shadow-lg p-5">
+                    <h2 class="text-3xl font-bold mb-3">当前目标原子团：<span id="target-name" class="text-primary">氢氧根离子</span></h2>
+                    <p class="text-gray-600 mt-5 text-xl">请将素材库的方块拖拽至画布合适位置，拼接当前目标原子团的化学符号</p>
+                </div>
+                <!-- 整合画布区和操作按钮 -->
+                <div class="bg-white rounded-xl shadow-lg p-5">
+                    <!-- 画布区 -->
+                    <div class="w-full">
+                        <h3 id="progress-display" class="text-3xl font-semibold mb-3">第1/5关：氢氧根离子</h3>
+                        <div id="canvas-grid" class="w-[300px] h-[120px] border border-gray-300 rounded-lg overflow-hidden canvas-grid-dashed mx-auto relative">
+                            <!-- 画布插槽将通过JS动态生成 -->
+                        </div>
+                    </div>
+                    <!-- 操作按钮 -->
+                    <div class="flex justify-center mt-8 gap-6">
+                        <button id="delete-btn" class="btn-game btn-secondary flex items-center" style="font-size: 20px;">
+                            <i class="fa fa-trash mr-2"></i> 删除方块
+                        </button>
+                        <button id="clear-btn" class="btn-game btn-neutral flex items-center" style="font-size: 20px;">
+                            <i class="fa fa-trash mr-2"></i> 清空画布
+                        </button>
+                        <button id="check-btn" class="btn-game btn-primary flex items-center" style="font-size: 20px;" disabled>
+                            <i class="fa fa-check mr-2"></i> 检验拼接
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+    <!-- 弹窗 -->
+    <div id="initial-modal" class="modal">
+        <div class="modal-content">
+            <h2 class="text-2xl font-bold text-primary mb-3">冲分抢时，解锁巅峰称号</h2>
+            <h3 class="text-xl font-semibold text-gray-700 mt-3 mb-3">化学学霸的进阶之路，就从这场原子团拼图大战开启！</h3>
+            <p class="text-lg font-semibold text-gray-700  mb-3">解锁专属段位，看看你是不是化学界的 “王者”！</p>
+            <p class="mt-2 text-gray-600">0 分？别灰心！“再接再厉”，下次一定能逆袭！</p>
+            <p class="mt-2 text-gray-600">20 分？“慢慢上手”，入门成功，继续加油！</p>
+            <p class="mt-2 text-gray-600">40 分？“越玩越溜”，手感来了，胜利不远！</p>
+            <p class="mt-2 text-gray-600">60 分？“小有成就”，实力凸显，值得骄傲！</p>
+            <p class="mt-2 text-gray-600">80 分？“大神级别”，距离巅峰只差一步！</p>
+            <p class="mt-2 text-gray-600">100 分且用时＞30 秒？“最强王者”！你已是众人仰望的存在！</p>
+            <p class="mt-2 font-semibold text-gray-600 mt-3 mb-6">100 分且用时≤30 秒？“无人能敌”！整个战场，你就是绝对的霸主！</p>
+            <button id="initial-modal-start" class="modal-button">开始游戏</button>
+        </div>
+    </div>
+    <div id="info-modal" class="modal">
+        <div class="modal-content">
+            <div id="info-modal-content"></div>
+            <button id="info-modal-ok" class="modal-button">OK</button>
+        </div>
+    </div>
+    <div id="result-modal" class="modal">
+        <div class="modal-content">
+            <h1 id="result-modal-title" class="text-4xl font-bold text-primary mb-4">结果标题</h1>
+            <h2 id="result-modal-score" class="text-2xl font-bold text-gray-800 mb-2">得分</h2>
+            <h2 id="result-modal-time" class="text-2xl font-bold text-gray-800 mb-4">用时</h2>
+            <table id="result-modal-table" class="w-full border-collapse border border-gray-300 mb-4 mx-auto">
+                <thead>
+                    <tr class="bg-primary text-white">
+                        <th class="border border-gray-300 p-2">得分</th>
+                        <th class="border border-gray-300 p-2">用时</th>
+                        <th class="border border-gray-300 p-2">段位</th>
+                    </tr>
+                </thead>
+                <tbody></tbody>
+            </table>
+            <button id="result-modal-replay" class="modal-button">再玩一次</button>
+        </div>
+    </div>
+    <div id="error-modal" class="modal">
+        <div class="modal-content">
+            <p id="error-modal-content" class="text-gray-600 text-xl"></p>
+        </div>
+    </div>
+    <script>
+        // 游戏状态管理
+        const gameState = {
+            score: 0,
+            step: 0,
+            timer: 0,
+            currentStep: 1,
+            placedElements: [],
+            placedNumbers: [],
+            placedCharges: [],
+            history: [],
+            canvasSlots: Array(10).fill(null),
+            slotSize: 60, // 每个插槽的大小(px)
+            canvasWidth: 300, // 画布宽度(px)
+            canvasHeight: 120, // 画布高度(px)
+            slotGrid: [ // 2×5的插槽网格(0=空, 1=已占用)
+                [0, 0, 0, 0, 0],
+                [0, 0, 0, 0, 0]
+            ],
+            isMusicPlaying: false // 音乐播放状态
+        };
+        // DOM 元素
+        const elementLibrary = document.getElementById('element-library');
+        const numberLibrary = document.getElementById('number-library');
+        const chargeLibrary = document.getElementById('charge-library');
+        const canvasGrid = document.getElementById('canvas-grid');
+        const checkBtn = document.getElementById('check-btn');
+        const deleteBtn = document.getElementById('delete-btn');
+        const clearBtn = document.getElementById('clear-btn');
+        const bgMusic = document.getElementById('bgMusic');
+        const musicBtn = document.getElementById('musicBtn');
+        const correctSound = document.getElementById('correctSound');
+        const wrongSound = document.getElementById('wrongSound');
+        const endSound = document.getElementById('endSound');
+        const initialModal = document.getElementById('initial-modal');
+        const initialModalStart = document.getElementById('initial-modal-start');
+        const infoModal = document.getElementById('info-modal');
+        const infoModalContent = document.getElementById('info-modal-content');
+        const infoModalOk = document.getElementById('info-modal-ok');
+        const resultModal = document.getElementById('result-modal');
+        const resultModalTitle = document.getElementById('result-modal-title');
+        const resultModalScore = document.getElementById('result-modal-score');
+        const resultModalTime = document.getElementById('result-modal-time');
+        const resultModalTable = document.getElementById('result-modal-table');
+        const resultModalReplay = document.getElementById('result-modal-replay');
+        const errorModal = document.getElementById('error-modal');
+        const errorModalContent = document.getElementById('error-modal-content');
+        const progressDisplay = document.getElementById('progress-display');
+        const targetName = document.getElementById('target-name');
+        const scoreTimer = document.getElementById('score-timer');
+        let selectedItem = null;
+        let currentDragType = null;
+        let timerInterval = null;
+        // 暂停计时器
+        function pauseTimer() {
+            if (timerInterval) {
+                clearInterval(timerInterval);
+                timerInterval = null;
+                console.log('Timer paused at:', gameState.timer);
+            }
+        }
+        // 恢复计时器
+        function resumeTimer() {
+            if (!timerInterval) {
+                timerInterval = setInterval(() => {
+                    gameState.timer++;
+                    updateScoreTimerDisplay();
+                }, 1000);
+                console.log('Timer resumed at:', gameState.timer);
+            }
+        }
+        // 切换音乐播放状态
+        function toggleMusic() {
+            gameState.isMusicPlaying = !gameState.isMusicPlaying;
+            if (gameState.isMusicPlaying) {
+                bgMusic.play().catch(e => {
+                    console.log("播放音乐失败:", e);
+                    gameState.isMusicPlaying = false;
+                    updateMusicButton();
+                });
+            } else {
+                bgMusic.pause();
+            }
+            updateMusicButton();
+        }
+        // 更新音乐按钮图标
+        function updateMusicButton() {
+            const icon = musicBtn.querySelector('i');
+            if (gameState.isMusicPlaying) {
+                icon.className = 'fa fa-volume-up text-xl text-primary';
+            } else {
+                icon.className = 'fa fa-volume-off text-xl text-gray-500';
+            }
+        }
+        // 创建素材库方块
+        function createLibraryItems() {
+            const elements = ['O', 'H', 'S', 'C', 'N'];
+            elements.forEach(element => {
+                const elementBox = document.createElement('div');
+                elementBox.className = 'draggable-item bg-element-blue text-white w-[60px] h-[60px] flex items-center justify-center text-2xl font-bold rounded-md shadow-md';
+                elementBox.dataset.type = 'element';
+                elementBox.dataset.value = element;
+                elementBox.textContent = element;
+                elementBox.draggable = true;
+                elementLibrary.appendChild(elementBox);
+            });
+            const numbers = ['1', '2', '3', '4', '5'];
+            numbers.forEach(number => {
+                const numberBox = document.createElement('div');
+                numberBox.className = 'draggable-item bg-number-red text-white w-[30px] h-[30px] flex items-center justify-center text-xl font-bold rounded-md shadow-md';
+                numberBox.dataset.type = 'number';
+                numberBox.dataset.value = number;
+                numberBox.textContent = number;
+                numberBox.draggable = true;
+                numberLibrary.appendChild(numberBox);
+            });
+            const charges = ['+', '-', '2+', '2-', '-2', '+2'];
+            charges.forEach(charge => {
+                const chargeBox = document.createElement('div');
+                chargeBox.className = 'draggable-item bg-charge-green text-white w-[30px] h-[30px] flex items-center justify-center text-xl font-bold rounded-md shadow-md';
+                chargeBox.dataset.type = 'charge';
+                chargeBox.dataset.value = charge;
+                chargeBox.textContent = charge;
+                chargeBox.draggable = true;
+                chargeLibrary.appendChild(chargeBox);
+            });
+        }
+        // 创建画布插槽
+        function createCanvasSlots() {
+            for (let row = 0; row < 2; row++) {
+                for (let col = 0; col < 5; col++) {
+                    const slot = document.createElement('div');
+                    const slotId = `slot-${row}-${col}`;
+                    slot.id = slotId;
+                    slot.className = 'slot-hover absolute';
+                    slot.style.width = `${gameState.slotSize}px`;
+                    slot.style.height = `${gameState.slotSize}px`;
+                    slot.style.left = `${col * gameState.slotSize}px`;
+                    slot.style.top = `${row * gameState.slotSize}px`;
+                    slot.dataset.row = row;
+                    slot.dataset.col = col;
+                    slot.dataset.isEmpty = true;
+                    slot.addEventListener('dragover', handleDragOver);
+                    slot.addEventListener('dragenter', handleDragEnter);
+                    slot.addEventListener('dragleave', handleDragLeave);
+                    slot.addEventListener('drop', handleDrop);
+                    canvasGrid.appendChild(slot);
+                }
+            }
+        }
+        // 检查元素是否可以放置
+        function canPlaceElement(type, row, col) {
+            const width = type === 'element' ? 2 : 1;
+            const height = type === 'element' ? 2 : 1;
+            if (col + width > 5 || row + height > 2) {
+                return false;
+            }
+            for (let r = row; r < row + height; r++) {
+                for (let c = col; c < col + width; c++) {
+                    if (gameState.slotGrid[r][c] !== 0) {
+                        return false;
+                    }
+                }
+            }
+            return true;
+        }
+        // 占用插槽
+        function occupySlots(type, row, col) {
+            const width = type === 'element' ? 2 : 1;
+            const height = type === 'element' ? 2 : 1;
+            for (let r = row; r < row + height; r++) {
+                for (let c = col; c < col + width; c++) {
+                    gameState.slotGrid[r][c] = 1;
+                    const slot = document.getElementById(`slot-${r}-${c}`);
+                    slot.dataset.isEmpty = false;
+                }
+            }
+        }
+        // 释放插槽
+        function freeSlots(type, row, col) {
+            const width = type === 'element' ? 2 : 1;
+            const height = type === 'element' ? 2 : 1;
+            for (let r = row; r < row + height; r++) {
+                for (let c = col; c < col + width; c++) {
+                    gameState.slotGrid[r][c] = 0;
+                    const slot = document.getElementById(`slot-${r}-${c}`);
+                    slot.dataset.isEmpty = true;
+                    while (slot.firstChild) {
+                        slot.removeChild(slot.firstChild);
+                    }
+                }
+            }
+        }
+        // 高亮显示有效放置区域
+        function highlightValidSlots(type, row, col) {
+            clearValidHighlights();
+            if (!canPlaceElement(type, row, col)) return;
+            const width = type === 'element' ? 2 : 1;
+            const height = type === 'element' ? 2 : 1;
+            for (let r = row; r < row + height; r++) {
+                for (let c = col; c < col + width; c++) {
+                    const slot = document.getElementById(`slot-${r}-${c}`);
+                    slot.classList.add('valid-drop');
+                }
+            }
+        }
+        // 清除有效放置区域高亮
+        function clearValidHighlights() {
+            document.querySelectorAll('.valid-drop').forEach(slot => {
+                slot.classList.remove('valid-drop');
+            });
+        }
+        // 初始化拖拽事件
+        function initDragEvents() {
+            document.querySelectorAll('.draggable-item').forEach(item => {
+                item.addEventListener('dragstart', handleDragStart);
+                item.addEventListener('dragend', handleDragEnd);
+            });
+        }
+        // 拖拽开始
+        function handleDragStart(e) {
+            this.classList.add('opacity-50', 'scale-95');
+            e.dataTransfer.setData('text/plain', JSON.stringify({
+                type: this.dataset.type,
+                value: this.dataset.value,
+                element: this.outerHTML
+            }));
+            currentDragType = this.dataset.type;
+        }
+        // 拖拽结束
+        function handleDragEnd(e) {
+            this.classList.remove('opacity-50', 'scale-95');
+            clearValidHighlights();
+        }
+        // 拖拽经过目标
+        function handleDragOver(e) {
+            e.preventDefault();
+            const row = parseInt(this.dataset.row);
+            const col = parseInt(this.dataset.col);
+            highlightValidSlots(currentDragType, row, col);
+        }
+        // 拖拽进入目标
+        function handleDragEnter(e) {
+            e.preventDefault();
+        }
+        // 拖拽离开目标
+        function handleDragLeave(e) {
+            clearValidHighlights();
+        }
+        // 放置元素
+        function handleDrop(e) {
+            e.preventDefault();
+            clearValidHighlights();
+            const slot = this;
+            const row = parseInt(slot.dataset.row);
+            const col = parseInt(slot.dataset.col);
+            const data = JSON.parse(e.dataTransfer.getData('text/plain'));
+            if (!canPlaceElement(data.type, row, col)) {
+                showErrorModal("此处无法放置");
+                return;
+            }
+            gameState.history.push({
+                action: 'place',
+                row: row,
+                col: col,
+                data: data
+            });
+            const placedItem = document.createElement('div');
+            placedItem.className = data.element.split('"')[1] + ' absolute z-10';
+            placedItem.dataset.type = data.type;
+            placedItem.dataset.value = data.value;
+            placedItem.innerHTML = data.value;
+            placedItem.draggable = false;
+            const size = data.type === 'element' ? gameState.slotSize * 2 : gameState.slotSize;
+            placedItem.style.width = `${size}px`;
+            placedItem.style.height = `${size}px`;
+            placedItem.style.left = `${col * gameState.slotSize}px`;
+            placedItem.style.top = `${row * gameState.slotSize}px`;
+            if (data.type === 'element') {
+                placedItem.style.fontSize = '4rem';
+            } else {
+                placedItem.style.fontSize = '2rem';
+            }
+            canvasGrid.appendChild(placedItem);
+            occupySlots(data.type, row, col);
+            const slotIndex = row * 5 + col;
+            gameState.canvasSlots[slotIndex] = data;
+            if (data.type === 'element') {
+                gameState.placedElements.push({ value: data.value, row: row, col: col });
+            } else if (data.type === 'number') {
+                gameState.placedNumbers.push({ value: data.value, row: row, col: col });
+            } else if (data.type === 'charge') {
+                gameState.placedCharges.push({ value: data.value, row: row, col: col });
+            }
+            placedItem.addEventListener('click', function () {
+                if (selectedItem) {
+                    selectedItem.classList.remove('selected-item');
+                }
+                this.classList.add('selected-item');
+                selectedItem = this;
+            });
+            updateCheckButton();
+        }
+        // 更新检验按钮状态
+        function updateCheckButton() {
+            checkBtn.disabled = false;
+            checkBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+        }
+        // 删除选中的方块
+        deleteBtn.addEventListener('click', function () {
+            if (selectedItem) {
+                const row = parseInt(selectedItem.style.top) / gameState.slotSize;
+                const col = parseInt(selectedItem.style.left) / gameState.slotSize;
+                const type = selectedItem.dataset.type;
+                selectedItem.classList.remove('selected-item');
+                freeSlots(type, row, col);
+                selectedItem.remove();
+                selectedItem = null;
+                if (type === 'element') {
+                    gameState.placedElements = gameState.placedElements.filter(
+                        el => el.row !== row || el.col !== col
+                    );
+                } else if (type === 'number') {
+                    gameState.placedNumbers = gameState.placedNumbers.filter(
+                        el => el.row !== row || el.col !== col
+                    );
+                } else if (type === 'charge') {
+                    gameState.placedCharges = gameState.placedCharges.filter(
+                        el => el.row !== row || el.col !== col
+                    );
+                }
+                updateCheckButton();
+            }
+        });
+        // 清空画布
+        clearBtn.addEventListener('click', function () {
+            document.querySelectorAll('#canvas-grid > div').forEach(el => {
+                if (el.id.startsWith('slot-')) {
+                    while (el.firstChild) {
+                        el.removeChild(el.firstChild);
+                    }
+                    el.dataset.isEmpty = true;
+                } else {
+                    el.remove();
+                    el.classList.remove('selected-item');
+                }
+            });
+            gameState.slotGrid = [
+                [0, 0, 0, 0, 0],
+                [0, 0, 0, 0, 0]
+            ];
+            gameState.placedElements = [];
+            gameState.placedNumbers = [];
+            gameState.placedCharges = [];
+            gameState.history = [];
+            gameState.canvasSlots = Array(10).fill(null);
+            gameState.currentStep = 1;
+            if (selectedItem) {
+                selectedItem.classList.remove('selected-item');
+                selectedItem = null;
+            }
+            updateCheckButton();
+            updateProgressDisplay();
+            targetName.textContent = getTargetName(gameState.step);
+        });
+        // 显示错误弹窗
+        function showErrorModal(message) {
+            errorModalContent.textContent = message;
+            errorModal.style.display = 'block';
+            pauseTimer();
+            setTimeout(() => {
+                errorModal.style.display = 'none';
+                resumeTimer();
+            }, 2000);
+        }
+        // 创建正确原子团图样
+        function createIonVisual(step) {
+            let items = [];
+            switch (step) {
+                case 1: // OH⁻
+                    items = [
+                        { type: 'element', value: 'O', row: 0, col: 0, size: 120, fontSize: '4rem' },
+                        { type: 'element', value: 'H', row: 0, col: 2, size: 120, fontSize: '4rem' },
+                        { type: 'charge', value: '-', row: 0, col: 4, size: 60, fontSize: '2rem' }
+                    ];
+                    break;
+                case 2: // NO₃⁻
+                    items = [
+                        { type: 'element', value: 'N', row: 0, col: 0, size: 120, fontSize: '4rem' },
+                        { type: 'element', value: 'O', row: 0, col: 2, size: 120, fontSize: '4rem' },
+                        { type: 'number', value: '3', row: 1, col: 4, size: 60, fontSize: '2rem' },
+                        { type: 'charge', value: '-', row: 0, col: 4, size: 60, fontSize: '2rem' }
+                    ];
+                    break;
+                case 3: // CO₃²⁻
+                    items = [
+                        { type: 'element', value: 'C', row: 0, col: 0, size: 120, fontSize: '4rem' },
+                        { type: 'element', value: 'O', row: 0, col: 2, size: 120, fontSize: '4rem' },
+                        { type: 'number', value: '3', row: 1, col: 4, size: 60, fontSize: '2rem' },
+                        { type: 'charge', value: '2-', row: 0, col: 4, size: 60, fontSize: '2rem' }
+                    ];
+                    break;
+                case 4: // SO₄²⁻
+                    items = [
+                        { type: 'element', value: 'S', row: 0, col: 0, size: 120, fontSize: '4rem' },
+                        { type: 'element', value: 'O', row: 0, col: 2, size: 120, fontSize: '4rem' },
+                        { type: 'number', value: '4', row: 1, col: 4, size: 60, fontSize: '2rem' },
+                        { type: 'charge', value: '2-', row: 0, col: 4, size: 60, fontSize: '2rem' }
+                    ];
+                    break;
+                case 5: // NH₄⁺
+                    items = [
+                        { type: 'element', value: 'N', row: 0, col: 0, size: 120, fontSize: '4rem' },
+                        { type: 'element', value: 'H', row: 0, col: 2, size: 120, fontSize: '4rem' },
+                        { type: 'number', value: '4', row: 1, col: 4, size: 60, fontSize: '2rem' },
+                        { type: 'charge', value: '+', row: 0, col: 4, size: 60, fontSize: '2rem' }
+                    ];
+                    break;
+            }
+            let html = '<div class="w-[300px] h-[120px] border border-gray-300 rounded-lg canvas-grid-dashed mx-auto relative mb-4">';
+            items.forEach(item => {
+                const bgClass = item.type === 'element' ? 'bg-element-blue' : item.type === 'number' ? 'bg-number-red' : 'bg-charge-green';
+                html += `<div class="${bgClass} text-white flex items-center justify-center font-bold rounded-md absolute"
+                             style="width: ${item.size}px; height: ${item.size}px; left: ${item.col * 60}px; top: ${item.row * 60}px; font-size: ${item.fontSize};">
+                            ${item.value}
+                         </div>`;
+            });
+            html += '</div>';
+            return html;
+        }
+        // 初始化游戏
+        function initGame() {
+            // 显示初始引导弹窗并暂停计时
+            initialModal.style.display = 'block';
+            pauseTimer();
+            // 绑定“开始游戏”按钮事件
+            initialModalStart.addEventListener('click', function startGame() {
+                initialModal.style.display = 'none';
+                gameState.score = 0;
+                gameState.step = 0;
+                gameState.timer = 0;
+                clearCanvas();
+                // 清除现有素材库项以避免重复
+                while (elementLibrary.firstChild) {
+                    elementLibrary.removeChild(elementLibrary.firstChild);
+                }
+                while (numberLibrary.firstChild) {
+                    numberLibrary.removeChild(numberLibrary.firstChild);
+                }
+                while (chargeLibrary.firstChild) {
+                    chargeLibrary.removeChild(chargeLibrary.firstChild);
+                }
+                createLibraryItems();
+                createCanvasSlots();
+                initDragEvents();
+                // 启动背景音乐（仅在用户交互后播放）
+                if (!gameState.isMusicPlaying) {
+                    bgMusic.play().then(() => {
+                        gameState.isMusicPlaying = true;
+                        updateMusicButton();
+                    }).catch(e => {
+                        console.log("自动播放音乐失败，需要用户交互:", e);
+                        updateMusicButton();
+                    });
+                }
+                resumeTimer();
+                gameState.step = 1;
+                updateProgressDisplay();
+                targetName.textContent = getTargetName(gameState.step);
+                updateScoreTimerDisplay();
+                showInfoModal([
+                    "目标原子团：氢氧根离子",
+                    "请从素材库中拖拽方块到画布，拼接出该原子团符号"
+                ]);
+                // 移除事件监听器以防止重复绑定
+                initialModalStart.removeEventListener('click', startGame);
+            }, { once: true });
+        }
+        // 清空画布
+        function clearCanvas() {
+            document.querySelectorAll('#canvas-grid > div').forEach(el => {
+                if (el.id.startsWith('slot-')) {
+                    while (el.firstChild) {
+                        el.removeChild(el.firstChild);
+                    }
+                    el.dataset.isEmpty = true;
+                } else {
+                    el.remove();
+                    el.classList.remove('selected-item');
+                }
+            });
+            gameState.slotGrid = [
+                [0, 0, 0, 0, 0],
+                [0, 0, 0, 0, 0]
+            ];
+            gameState.placedElements = [];
+            gameState.placedNumbers = [];
+            gameState.placedCharges = [];
+            gameState.history = [];
+            gameState.canvasSlots = Array(10).fill(null);
+            gameState.currentStep = 1;
+            if (selectedItem) {
+                selectedItem.classList.remove('selected-item');
+                selectedItem = null;
+            }
+            updateCheckButton();
+            updateProgressDisplay();
+            targetName.textContent = getTargetName(gameState.step);
+            updateScoreTimerDisplay();
+        }
+        // 更新进度显示
+        function updateProgressDisplay() {
+            progressDisplay.textContent = `第${gameState.step}/5关：${getTargetName(gameState.step)}`;
+        }
+        // 更新得分和计时显示
+        function updateScoreTimerDisplay() {
+            scoreTimer.textContent = `得分：${gameState.score}分，用时：${gameState.timer}秒`;
+        }
+        // 显示信息弹窗
+        function showInfoModal(content, showIonVisual = false, step = null) {
+            let htmlContent = `<h2 class="text-2xl font-bold text-primary mb-4">${content[0]}</h2>`;
+            if (showIonVisual && step) {
+                htmlContent += createIonVisual(step);
+            }
+            // Apply specific styles to success, failure, and next target messages
+            htmlContent += content.slice(1).map(line => {
+                if (line.includes('很遗憾')) {
+                    return `<p style="color: #EF4444;" class="mb-2 text-xl font-bold">${line}</p>`;
+                } else if (line.includes('下一个目标')) {
+                    return `<p class="text-primary mb-2 text-xl font-bold">${line}</p>`;
+                } else if (line.includes('太棒啦')) {
+                    return `<p class="text-primary mb-2 text-xl">${line}</p>`;
+                }
+                return `<p class="text-gray-600 mb-2 text-xl">${line}</p>`;
+            }).join('');
+            infoModalContent.innerHTML = htmlContent;
+            infoModal.style.display = 'block';
+            pauseTimer();
+        }
+        // 关闭信息弹窗
+        function infoModalOkHandler() {
+            infoModal.style.display = 'none';
+            if (gameState.step < 5) {
+                resumeTimer();
+            }
+        }
+        infoModalOk.addEventListener('click', infoModalOkHandler);
+        // 检查拼接结果
+        function checkResult() {
+            const step = gameState.step;
+            let isCorrect = false;
+            console.log('Checking step:', step, 'Placed:', {
+                elements: gameState.placedElements,
+                numbers: gameState.placedNumbers,
+                charges: gameState.placedCharges
+            });
+            switch (step) {
+                case 1:
+                    isCorrect = checkStep1();
+                    break;
+                case 2:
+                    isCorrect = checkStep2();
+                    break;
+                case 3:
+                    isCorrect = checkStep3();
+                    break;
+                case 4:
+                    isCorrect = checkStep4();
+                    break;
+                case 5:
+                    isCorrect = checkStep5();
+                    break;
+            }
+            console.log('Step', step, 'isCorrect:', isCorrect);
+            if (isCorrect && gameState.score < 100) {
+                gameState.score += 20;
+                if (gameState.score > 100) gameState.score = 100; // Cap at 100
+                correctSound.play();
+            } else {
+                wrongSound.play();
+            }
+            updateScoreTimerDisplay();
+            if (step < 5) {
+                const nextTarget = getNextTarget(step);
+                const message = isCorrect ?
+                    [`太棒啦！拼接${getTargetName(step)}成功`, `下一个目标：${nextTarget}`] :
+                    [`很遗憾！拼接${getTargetName(step)}失败`, `下一个目标：${nextTarget}`];
+                showInfoModal(message, true, step);
+                infoModalOk.removeEventListener('click', infoModalOkHandler);
+                infoModalOk.addEventListener('click', function () {
+                    clearCanvas();
+                    gameState.step++;
+                    updateProgressDisplay();
+                    targetName.textContent = getTargetName(gameState.step);
+                    infoModal.style.display = 'none';
+                    resumeTimer();
+                    infoModalOk.addEventListener('click', infoModalOkHandler);
+                }, { once: true });
+            } else {
+                endSound.play();
+                const message = isCorrect ?
+                    [`太棒啦！拼接${getTargetName(step)}成功`] :
+                    [`很遗憾！拼接${getTargetName(step)}失败`];
+                showInfoModal(message, true, step);
+                infoModalOk.textContent = '结束游戏';
+                infoModalOk.removeEventListener('click', infoModalOkHandler);
+                infoModalOk.addEventListener('click', function () {
+                    infoModal.style.display = 'none';
+                    showResultModal();
+                    infoModalOk.addEventListener('click', infoModalOkHandler);
+                }, { once: true });
+            }
+        }
+        // 检查 step 1 (OH⁻)
+        function checkStep1() {
+            console.log('Checking Step 1 - OH⁻');
+            const elements = gameState.placedElements.map(el => el.value);
+            const charges = gameState.placedCharges.map(ch => ch.value);
+            const allValues = [...elements, ...charges];
+            const requiredValues = ["O", "H", "-"];
+            if (!arraysEqual(allValues.sort(), requiredValues.sort()) || gameState.placedNumbers.length > 0) {
+                console.log('Step 1 failed: Incorrect values', allValues, requiredValues, 'Numbers:', gameState.placedNumbers);
+                return false;
+            }
+            const oElement = gameState.placedElements.find(el => el.value === "O");
+            const hElement = gameState.placedElements.find(el => el.value === "H");
+            const chargeElement = gameState.placedCharges.find(ch => ch.value === "-");
+            if (!oElement || !hElement || !chargeElement) {
+                console.log('Step 1 failed: Missing elements', { oElement, hElement, chargeElement });
+                return false;
+            }
+            const isValidPosition = oElement.col === 0 && hElement.col === 2 && chargeElement.col === 4 && chargeElement.row === 0;
+            console.log('Step 1 position check:', {
+                oElement: oElement.col,
+                hElement: hElement.col,
+                chargeElement: { col: chargeElement.col, row: chargeElement.row },
+                isValidPosition
+            });
+            return isValidPosition;
+        }
+        // 检查 step 2 (NO₃⁻)
+        function checkStep2() {
+            console.log('Checking Step 2 - NO₃⁻');
+            const elements = gameState.placedElements.map(el => el.value);
+            const numbers = gameState.placedNumbers.map(num => num.value);
+            const charges = gameState.placedCharges.map(ch => ch.value);
+            const allValues = [...elements, ...numbers, ...charges];
+            const requiredValues = ["N", "O", "3", "-"];
+            if (!arraysEqual(allValues.sort(), requiredValues.sort())) {
+                console.log('Step 2 failed: Incorrect values', allValues, requiredValues);
+                return false;
+            }
+            const nElement = gameState.placedElements.find(el => el.value === "N");
+            const oElement = gameState.placedElements.find(el => el.value === "O");
+            const numberElement = gameState.placedNumbers.find(num => num.value === "3");
+            const chargeElement = gameState.placedCharges.find(ch => ch.value === "-");
+            if (!nElement || !oElement || !numberElement || !chargeElement) {
+                console.log('Step 2 failed: Missing elements', { nElement, oElement, numberElement, chargeElement });
+                return false;
+            }
+            const isValidPosition = nElement.col === 0 && oElement.col === 2 && numberElement.col === 4 && numberElement.row === 1 && chargeElement.col === 4 && chargeElement.row === 0;
+            console.log('Step 2 position check:', {
+                nElement: nElement.col,
+                oElement: oElement.col,
+                numberElement: { col: numberElement.col, row: numberElement.row },
+                chargeElement: { col: chargeElement.col, row: chargeElement.row },
+                isValidPosition
+            });
+            return isValidPosition;
+        }
+        // 检查 step 3 (CO₃²⁻)
+        function checkStep3() {
+            console.log('Checking Step 3 - CO₃²⁻');
+            const elements = gameState.placedElements.map(el => el.value);
+            const numbers = gameState.placedNumbers.map(num => num.value);
+            const charges = gameState.placedCharges.map(ch => ch.value);
+            const allValues = [...elements, ...numbers, ...charges];
+            const requiredValues = ["C", "O", "3", "2-"];
+            if (!arraysEqual(allValues.sort(), requiredValues.sort())) {
+                console.log('Step 3 failed: Incorrect values', allValues, requiredValues);
+                return false;
+            }
+            const cElement = gameState.placedElements.find(el => el.value === "C");
+            const oElement = gameState.placedElements.find(el => el.value === "O");
+            const numberElement = gameState.placedNumbers.find(num => num.value === "3");
+            const chargeElement = gameState.placedCharges.find(ch => ch.value === "2-");
+            if (!cElement || !oElement || !numberElement || !chargeElement) {
+                console.log('Step 3 failed: Missing elements', { cElement, oElement, numberElement, chargeElement });
+                return false;
+            }
+            const isValidPosition = cElement.col === 0 && oElement.col === 2 && numberElement.col === 4 && numberElement.row === 1 && chargeElement.col === 4 && chargeElement.row === 0;
+            console.log('Step 3 position check:', {
+                cElement: cElement.col,
+                oElement: oElement.col,
+                numberElement: { col: numberElement.col, row: numberElement.row },
+                chargeElement: { col: chargeElement.col, row: chargeElement.row },
+                isValidPosition
+            });
+            return isValidPosition;
+        }
+        // 检查 step 4 (SO₄²⁻)
+        function checkStep4() {
+            console.log('Checking Step 4 - SO₄²⁻');
+            const elements = gameState.placedElements.map(el => el.value);
+            const numbers = gameState.placedNumbers.map(num => num.value);
+            const charges = gameState.placedCharges.map(ch => ch.value);
+            const allValues = [...elements, ...numbers, ...charges];
+            const requiredValues = ["S", "O", "4", "2-"];
+            if (!arraysEqual(allValues.sort(), requiredValues.sort())) {
+                console.log('Step 4 failed: Incorrect values', allValues, requiredValues);
+                return false;
+            }
+            const sElement = gameState.placedElements.find(el => el.value === "S");
+            const oElement = gameState.placedElements.find(el => el.value === "O");
+            const numberElement = gameState.placedNumbers.find(num => num.value === "4");
+            const chargeElement = gameState.placedCharges.find(ch => ch.value === "2-");
+            if (!sElement || !oElement || !numberElement || !chargeElement) {
+                console.log('Step 4 failed: Missing elements', { sElement, oElement, numberElement, chargeElement });
+                return false;
+            }
+            const isValidPosition = sElement.col === 0 && oElement.col === 2 && numberElement.col === 4 && numberElement.row === 1 && chargeElement.col === 4 && chargeElement.row === 0;
+            console.log('Step 4 position check:', {
+                sElement: sElement.col,
+                oElement: oElement.col,
+                numberElement: { col: numberElement.col, row: numberElement.row },
+                chargeElement: { col: chargeElement.col, row: chargeElement.row },
+                isValidPosition
+            });
+            return isValidPosition;
+        }
+        // 检查 step 5 (NH₄⁺)
+        function checkStep5() {
+            console.log('Checking Step 5 - NH₄⁺');
+            const elements = gameState.placedElements.map(el => el.value);
+            const numbers = gameState.placedNumbers.map(num => num.value);
+            const charges = gameState.placedCharges.map(ch => ch.value);
+            const allValues = [...elements, ...numbers, ...charges];
+            const requiredValues = ["N", "H", "4", "+"];
+            if (!arraysEqual(allValues.sort(), requiredValues.sort())) {
+                console.log('Step 5 failed: Incorrect values', allValues, requiredValues);
+                return false;
+            }
+            const nElement = gameState.placedElements.find(el => el.value === "N");
+            const hElement = gameState.placedElements.find(el => el.value === "H");
+            const numberElement = gameState.placedNumbers.find(num => num.value === "4");
+            const chargeElement = gameState.placedCharges.find(ch => ch.value === "+");
+            if (!nElement || !hElement || !numberElement || !chargeElement) {
+                console.log('Step 5 failed: Missing elements', { nElement, hElement, numberElement, chargeElement });
+                return false;
+            }
+            const isValidPosition = nElement.col === 0 && hElement.col === 2 && numberElement.col === 4 && numberElement.row === 1 && chargeElement.col === 4 && chargeElement.row === 0;
+            console.log('Step 5 position check:', {
+                nElement: nElement.col,
+                hElement: hElement.col,
+                numberElement: { col: numberElement.col, row: numberElement.row },
+                chargeElement: { col: chargeElement.col, row: chargeElement.row },
+                isValidPosition
+            });
+            return isValidPosition;
+        }
+        // 比较两个数组是否相等
+        function arraysEqual(a, b) {
+            if (a.length !== b.length) return false;
+            for (let i = 0; i < a.length; i++) {
+                if (a[i] !== b[i]) return false;
+            }
+            return true;
+        }
+        // 获取目标名称
+        function getTargetName(step) {
+            switch (step) {
+                case 1: return "氢氧根离子";
+                case 2: return "硝酸根离子";
+                case 3: return "碳酸根离子";
+                case 4: return "硫酸根离子";
+                case 5: return "铵根离子";
+            }
+        }
+        // 获取下一个目标名称
+        function getNextTarget(step) {
+            switch (step) {
+                case 1: return "硝酸根离子";
+                case 2: return "碳酸根离子";
+                case 3: return "硫酸根离子";
+                case 4: return "铵根离子";
+            }
+        }
+        // 显示结算弹窗
+        function showResultModal() {
+            let title;
+            switch (gameState.score) {
+                case 0: title = "再接再厉"; break;
+                case 20: title = "慢慢上手"; break;
+                case 40: title = "越玩越溜"; break;
+                case 60: title = "小有成就"; break;
+                case 80: title = "大神级别"; break;
+                case 100: title = gameState.timer > 60 ? "最强王者" : "无人能敌"; break;
+            }
+            resultModalTitle.textContent = title;
+            resultModalScore.textContent = `得分：${gameState.score}/100`;
+            resultModalTime.textContent = `用时：${gameState.timer}秒`;
+            // 动态生成段位规则表格
+            const ranks = [
+                { score: "0/100", time: "-", rank: "再接再厉" },
+                { score: "20/100", time: "-", rank: "慢慢上手" },
+                { score: "40/100", time: "-", rank: "越玩越溜" },
+                { score: "60/100", time: "-", rank: "小有成就" },
+                { score: "80/100", time: "-", rank: "大神级别" },
+                { score: "100/100", time: "> 60秒", rank: "最强王者" },
+                { score: "100/100", time: "≤ 60秒", rank: "无人能敌" }
+            ];
+            const tbody = resultModalTable.querySelector('tbody');
+            tbody.innerHTML = '';
+            ranks.forEach(rank => {
+                const row = document.createElement('tr');
+                row.className = 'bg-white';
+                row.innerHTML = `
+                    <td class="border border-gray-300 p-2 text-center">${rank.score}</td>
+                    <td class="border border-gray-300 p-2 text-center">${rank.time}</td>
+                    <td class="border border-gray-300 p-2 text-center">${rank.rank}</td>
+                `;
+                tbody.appendChild(row);
+            });
+            resultModal.style.display = 'block';
+            pauseTimer();
+        }
+        // 再玩一次
+        resultModalReplay.addEventListener('click', function () {
+            resultModal.style.display = 'none';
+            gameState.timer = 0; // Reset timer
+            initGame();
+        });
+        // 添加音乐控制按钮事件
+        musicBtn.addEventListener('click', toggleMusic);
+        // 检验拼接按钮事件
+        checkBtn.addEventListener('click', checkResult);
+        // 启动游戏
+        initGame();
+    </script>
+</body>
+</html>
